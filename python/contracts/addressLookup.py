@@ -4,19 +4,23 @@ class AddressLookup(sp.Contract):
     """Contract to allow a global lookup register between Address and ID (nat).
     The use-case is to save on gas in contracts where addresses are frequently stored.
 
-    Two cryptic error messages:
+    Some cryptic error messages from the entry-points:
         UNKNOWN = The address or id is not registered.
         REREG   = The address or id has previously been registered and can't reregister.
-        ID_NEQ_SOURCE = The address of id is not the source's address.
+        ID_NEQ_SRC = The address of id is not the source's address.
         ID_NEQ_ADDR = The address of id is not the address in addr.
 
     Notes: It may be useful for this contract to get a Michelson optimization to save on gas.        
+
+    Author: @pyglot ( tz1KhAVDecQBh9BZLnN1dUynovHjaNUbNF5d )
 
     """
     def __init__(self, addr2id, id2addr, counter):
         """Initializes the contract. 
         
-        Initialization is a bit fragile, could be improved, but used only at origination ...
+        The default setup initializes id 0 to the null address, and id 1 to the burn address.
+
+        Initialization is a bit fragile, but used only at origination ...
 
         """
 
@@ -24,7 +28,7 @@ class AddressLookup(sp.Contract):
         self.init_type(sp.TRecord(
             addr2id=sp.TBigMap(sp.TAddress, sp.TNat),
             id2addr=sp.TBigMap(sp.TNat, sp.TAddress),
-            counter=sp.TNat))
+            counter=sp.TNat).layout(("addr2id",("counter","id2addr"))))
 
         self.init(addr2id=addr2id,id2addr=id2addr,counter=counter)
 
@@ -37,16 +41,17 @@ class AddressLookup(sp.Contract):
     def view_has_source(self):
         sp.result(self.data.addr2id.contains(sp.source))
 
-    @sp.onchain_view(name="chk_idEqSource")
+    @sp.onchain_view(name="chk_idEqSrc")
     def view_verify_id_equ_source(self, id):
         sp.set_type(id,sp.TNat)
-        sp.verify(self.data.id2addr[id]==sp.source,message="ID_NEQ_SOURCE")
+        sp.verify(self.data.id2addr[id]==sp.source,message="ID_NEQ_SRC")
 
     @sp.onchain_view(name="chk_idEqAddr")
     def view_verify_id_equ_addr(self,params):
-        sp.set_type(params.id,sp.TNat)        
-        sp.set_type(params.addr,sp.TAddress)
-        sp.verify(self.data.id2addr.contains(params.id),message="ID_UNKNOWN")
+        sp.set_type(params,sp.TRecord(id=sp.TNat,addr=sp.TAddress).layout(("addr","id")))
+#        sp.set_type(params.id,sp.TNat)        
+#        sp.set_type(params.addr,sp.TAddress)
+        sp.verify(self.data.id2addr.contains(params.id),message="UNKNOWN")
         sp.verify(self.data.id2addr[params.id]==params.addr,message="ID_NEQ_ADDR")
 
     @sp.onchain_view(name="get_counter")
@@ -134,12 +139,11 @@ class LookupAddress(sp.Contract):
         self.data.id_nnn[i] = sp.record(a=id,b=id,c=id)
 
     @sp.entry_point
-    def lua_store_nnn(self,i,addr):
+    def lua_store_nnn(self,params):
         """Test lookup addres store three nats."""
-        sp.set_type(i,sp.TNat)
-        sp.set_type(addr,sp.TAddress)
-        id = sp.view("addr2id", self.data.id_reg, addr, t = sp.TNat).open_some()
-        self.data.id_nnn[i] = sp.record(a=id,b=id,c=id)
+        sp.set_type(params,sp.TRecord(i=sp.TNat,addr=sp.TAddress).layout(("i","addr")))
+        id = sp.view("addr2id", self.data.id_reg, params.addr, t = sp.TNat).open_some()
+        self.data.id_nnn[params.i] = sp.record(a=id,b=id,c=id)
 
     @sp.entry_point
     def chk_view_has_addr(self,addr):
@@ -156,15 +160,14 @@ class LookupAddress(sp.Contract):
     def chk_view_idEqSource(self,id):
         """Test verifaction func."""
         sp.set_type(id,sp.TNat)
-        sp.compute(sp.view("chk_idEqSource", self.data.id_reg, id, t = sp.TUnit))
+        sp.compute(sp.view("chk_idEqSrc", self.data.id_reg, id, t = sp.TUnit))
         self.data.id_nnn[10] = sp.record(a=id,b=id,c=id)       
 
     @sp.entry_point
-    def chk_view_idEqAddr(self,id,addr):
+    def chk_view_idEqAddr(self,params):
         """Test verification func."""
-        sp.set_type(id,sp.TNat)
-        sp.set_type(addr,sp.TAddress)
-        sp.compute(sp.view("chk_idEqAddr", self.data.id_reg, sp.record(id=id,addr=addr), t = sp.TUnit))
+        sp.set_type(params,sp.TRecord(id=sp.TNat,addr=sp.TAddress).layout(("addr","id")))
+        sp.compute(sp.view("chk_idEqAddr", self.data.id_reg, params, t = sp.TUnit))
 
     @sp.entry_point
     def chk_view_get_counter(self,counter):
@@ -215,7 +218,6 @@ def test():
     scenario += c2.store_nnn(sp.record(i=2,id=1000000000000000000000000000000000000)).run(valid=True, sender=acc1)
     scenario += c2.lui_store_aaa(sp.record(i=3,id=0)).run(valid=True, sender=acc1)
     scenario += c2.lua_store_nnn(sp.record(i=4,addr=nulladdr)).run(valid=True, sender=acc1)
-    
 
     scenario += c2.chk_view_has_addr(nulladdr).run(valid=True,sender=acc1)
     scenario += c2.chk_view_has_source().run(valid=True,sender=acc1)        
@@ -233,5 +235,8 @@ def test():
     scenario += c2.chk_view_idEqAddr(sp.record(id=10,addr=burnaddr)).run(valid=False,sender=acc1)
     scenario += c2.chk_view_idEqAddr(sp.record(id=1,addr=nulladdr)).run(valid=False,sender=acc1)
 
+# Main contract target : Address lookup table contract
 sp.add_compilation_target("address_lookup", AddressLookup(addr2id, id2addr, 2))
+
+# Test contract, only for testnet
 sp.add_compilation_target("lookup_address_test", LookupAddress(id_aaa, id_nnn, sp.address("KT1BvfKk7H6ecPwc1fvF5FZyJh87ZRrEa91M")))
