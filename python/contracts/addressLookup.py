@@ -156,14 +156,15 @@ class LookupAddress(sp.Contract):
     def chk_view_idEqSource(self,id):
         """Test verifaction func."""
         sp.set_type(id,sp.TNat)
-        sp.compute(sp.view("chk_idEqSource", self.data.id_reg, id, t = sp.TUnit).open_some())
+        sp.compute(sp.view("chk_idEqSource", self.data.id_reg, id, t = sp.TUnit))
+        self.data.id_nnn[10] = sp.record(a=id,b=id,c=id)       
 
     @sp.entry_point
     def chk_view_idEqAddr(self,id,addr):
         """Test verification func."""
         sp.set_type(id,sp.TNat)
         sp.set_type(addr,sp.TAddress)
-        sp.compute(sp.view("chk_idEqAddr", self.data.id_reg, sp.record(id=id,addr=addr), t = sp.TUnit).open_some())
+        sp.compute(sp.view("chk_idEqAddr", self.data.id_reg, sp.record(id=id,addr=addr), t = sp.TUnit))
 
     @sp.entry_point
     def chk_view_get_counter(self,counter):
@@ -221,7 +222,7 @@ def test():
     scenario += c2.chk_view_idEqSource(2).run(valid=True,sender=acc1)
     scenario += c2.chk_view_idEqAddr(sp.record(id=1,addr=burnaddr)).run(valid=True,sender=acc1)
     scenario += c2.chk_view_idEqAddr(sp.record(id=0,addr=nulladdr)).run(valid=True,sender=acc1)
-#
+
     scenario += c2.chk_view_has_addr(acc3.address).run(valid=False,sender=acc1)
     scenario += c2.chk_view_has_source().run(valid=False,sender=acc3)
     scenario += c2.chk_view_get_counter(4).run(valid=True,sender=acc2)
